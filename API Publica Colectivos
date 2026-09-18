@@ -1,3 +1,4 @@
+cat << 'EOF' > streamlit_app.py
 import streamlit as st
 import requests
 from google.transit import gtfs_realtime_pb2
@@ -75,4 +76,6 @@ if st.button("Obtener Ubicaciones de Colectivos", type="primary"):
                 st.dataframe(colectivos[:20])
         else:
             st.warning("El feed respondió correctamente pero no contiene datos de colectivos en este momento.")
+EOF
+
 
