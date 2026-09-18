@@ -1,0 +1,80 @@
+cat << 'EOF' > streamlit_app.py
+import streamlit as st
+import requests
+from google.transit import gtfs_realtime_pb2
+
+# Configuración básica de la aplicación
+st.set_page_config(
+    page_title="Colectivos CABA en Vivo", 
+    page_icon="🚌", 
+    layout="wide"
+)
+
+st.title("🚌 Posiciones de Colectivos de CABA en Tiempo Real")
+st.write("Esta aplicación consulta el feed GTFS-Realtime de la API de Transporte de la Ciudad de Buenos Aires.")
+
+# Panel lateral para ingresar las credenciales de la API
+st.sidebar.header("Credenciales de la API")
+st.sidebar.info("Ingresa tus credenciales obtenidas en el portal de datos abiertos de CABA.")
+
+client_id = st.sidebar.text_input("Client ID", value="", type="password")
+client_secret = st.sidebar.text_input("Client Secret", value="", type="password")
+
+# Endpoint oficial de CABA
+URL = "https://apitransporte.buenosaires.gob.ar/colectivos/feed-gtfs"
+
+def consultar_api(c_id, c_secret):
+    params = {
+        "client_id": c_id,
+        "client_secret": c_secret
+    }
+    
+    try:
+        with st.spinner("Consultando servidor de Transporte CABA..."):
+            response = requests.get(URL, params=params, timeout=15)
+            
+        if response.status_code == 200:
+            # Procesar el archivo binario GTFS-RT (Protobuf)
+            feed = gtfs_realtime_pb2.FeedMessage()
+            feed.ParseFromString(response.content)
+            
+            registros = []
+            for entity in feed.entity:
+                if entity.HasField('vehicle'):
+                    pos = entity.vehicle.position
+                    registros.append({
+                        "lat": pos.latitude,
+                        "lon": pos.longitude,
+                        "id": entity.vehicle.vehicle.label or entity.id,
+                        "linea": entity.vehicle.trip.route_id if entity.vehicle.HasField('trip') else "N/A"
+                    })
+            return registros, None
+        else:
+            return None, f"Error {response.status_code}: {response.text}"
+            
+    except Exception as e:
+        return None, f"Error de conexión o procesamiento: {str(e)}"
+
+# Botón para ejecutar la consulta
+if st.button("Obtener Ubicaciones de Colectivos", type="primary"):
+    if not client_id or not client_secret:
+        st.error("⚠️ Debes ingresar el Client ID y Client Secret en el panel izquierdo.")
+    else:
+        colectivos, error = consultar_api(client_id, client_secret)
+        
+        if error:
+            st.error(f"❌ Ocurrió un error al consultar la API:\n{error}")
+        elif colectivos:
+            st.success(f"✅ Se detectaron {len(colectivos)} colectivos transmitiendo en tiempo real.")
+            
+            # Mostrar el mapa interactivo con las ubicaciones
+            st.subheader("Mapa de Colectivos")
+            st.map(colectivos)
+            
+            # Tabla desplegable con los primeros registros procesados
+            with st.expander("Ver muestra de registros (primeros 20 colectivos)"):
+                st.dataframe(colectivos[:20])
+        else:
+            st.warning("El feed respondió correctamente pero no contiene datos de colectivos en este momento.")
+EOF
+
